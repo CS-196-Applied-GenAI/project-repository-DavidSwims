@@ -93,6 +93,29 @@ router.get('/search/query', async (req, res) => {
 });
 
 /**
+ * GET /api/users/check-username?username=foo
+ * Returns whether a username is available.
+ */
+router.get('/check-username', async (req, res) => {
+  const username = (req.query.username || '').trim();
+
+  if (!username) {
+    return res.status(400).json({ error: 'username query param is required' });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      'SELECT id FROM users WHERE username = ?',
+      [username]
+    );
+
+    res.json({ available: rows.length === 0 });
+  } catch (err) {
+    throw err;
+  }
+});
+
+/**
  * POST /api/users/:id/follow (protected)
  * Toggle: follow if not following, unfollow if already following.
  * Prevents self-follow (400).
