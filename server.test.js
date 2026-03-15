@@ -26,6 +26,7 @@ describe('server.js', () => {
 
   beforeEach(() => {
     db.pool.query.mockReset();
+    bcrypt.hash.mockClear();
     bcrypt.compare.mockReset();
     jwt.verify.mockReset();
   });
@@ -284,6 +285,38 @@ describe('server.js', () => {
       expect(response.status).toBe(403);
       expect(response.body).toEqual({ error: 'Invalid or expired token' });
     });
+
+    it('returns 404 when JWT is valid but user no longer exists', async () => {
+      jwt.verify.mockReturnValue({ id: 99, username: 'ghost' });
+      db.pool.query.mockResolvedValueOnce([[]]);
+
+      const response = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: 'User not found' });
+    });
+  });
+
+  describe('POST /api/auth/logout', () => {
+    it('returns 200 when authenticated user logs out', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+
+      const response = await request(app)
+        .post('/api/auth/logout')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ message: 'Logged out successfully' });
+    });
+
+    it('returns 401 when token is missing', async () => {
+      const response = await request(app).post('/api/auth/logout');
+
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual({ error: 'Access token required' });
+    });
   });
 
   describe('POST /api/tweets', () => {
@@ -498,6 +531,117 @@ describe('server.js', () => {
         expect.any(Array)
       );
     });
+
+    it('returns blocked: false when unblocking an already blocked user', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+      db.pool.query
+        .mockResolvedValueOnce([[{ id: 10 }]])
+        .mockResolvedValueOnce([{}]);
+
+      const response = await request(app)
+        .post('/api/users/2/block')
+        .set('Authorization', 'Bearer token');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ blocked: false });
+      expect(db.pool.query).toHaveBeenCalledWith(
+        'DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?',
+        [1, 2]
+      );
+    });
+
+    it('returns 400 when trying to block yourself', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+
+      const response = await request(app)
+        .post('/api/users/1/block')
+        .set('Authorization', 'Bearer token');
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('yourself');
+    });
+  });
+
+  describe('PUT /api/users/me', () => {
+    it('updates username, bio, profile pic, and password', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+      db.pool.query
+        .mockResolvedValueOnce([{}])
+        .mockResolvedValueOnce([[
+          {
+            id: 1,
+            username: 'newname',
+            email: 'john@example.com',
+            bio: 'new bio',
+            profile_pic_url: 'https://img.example/pic.png',
+          },
+        ]]);
+
+      const response = await request(app)
+        .put('/api/users/me')
+        .set('Authorization', 'Bearer token')
+        .send({
+          username: 'newname',
+          bio: 'new bio',
+          profile_pic_url: 'https://img.example/pic.png',
+          password: 'Password123!',
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.username).toBe('newname');
+      expect(bcrypt.hash).toHaveBeenCalledWith('Password123!', 10);
+    });
+
+    it('returns 400 when no fields are provided', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+
+      const response = await request(app)
+        .put('/api/users/me')
+        .set('Authorization', 'Bearer token')
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'No fields to update' });
+    });
+
+    it('returns 400 when username is empty', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+
+      const response = await request(app)
+        .put('/api/users/me')
+        .set('Authorization', 'Bearer token')
+        .send({ username: '   ' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Username cannot be empty' });
+    });
+
+    it('returns 400 when password is shorter than 8 chars', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+
+      const response = await request(app)
+        .put('/api/users/me')
+        .set('Authorization', 'Bearer token')
+        .send({ password: 'short' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Password must be at least 8 characters' });
+    });
+
+    it('returns 400 when username update violates unique constraint', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+      const dupError = new Error('Duplicate entry');
+      dupError.code = 'ER_DUP_ENTRY';
+      db.pool.query.mockRejectedValueOnce(dupError);
+
+      const response = await request(app)
+        .put('/api/users/me')
+        .set('Authorization', 'Bearer token')
+        .send({ username: 'takenname' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Username already taken' });
+    });
   });
 
   describe('GET /api/users/:username', () => {
@@ -530,6 +674,23 @@ describe('server.js', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.likes).toEqual([]);
+    });
+
+    it('returns base profile when tab is not tweets or likes', async () => {
+      db.pool.query.mockResolvedValueOnce([[
+        { id: 1, username: 'johndoe', email: 'j@x.com', bio: 'hi', profile_pic_url: null },
+      ]]);
+
+      const response = await request(app).get('/api/users/johndoe?tab=about');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        id: 1,
+        username: 'johndoe',
+        email: 'j@x.com',
+        bio: 'hi',
+        profile_pic_url: null,
+      });
     });
   });
 
