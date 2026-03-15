@@ -17,7 +17,7 @@ describe('db.js', () => {
     it('returns result when pool query succeeds', async () => {
       mockQuery.mockResolvedValue([[{ result: 2 }]]);
 
-      const { testConnection } = require('./db');
+      const { testConnection } = require('./backend/db');
       const result = await testConnection();
 
       expect(result).toEqual({ success: true, result: 2 });
@@ -27,7 +27,7 @@ describe('db.js', () => {
     it('throws when connection fails (covers error-handling branch)', async () => {
       mockQuery.mockRejectedValue(new Error('Connection refused'));
 
-      const { testConnection } = require('./db');
+      const { testConnection } = require('./backend/db');
 
       await expect(testConnection()).rejects.toThrow('Connection refused');
     });
@@ -50,7 +50,7 @@ describe('db.js', () => {
       });
       mockQuery.mockResolvedValue([[{ result: 2 }]]);
 
-      const { testConnection } = require('./db');
+      const { testConnection } = require('./backend/db');
       const result = await testConnection();
       expect(result).toEqual({ success: true, result: 2 });
 

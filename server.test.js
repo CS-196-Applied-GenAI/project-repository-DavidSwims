@@ -1,5 +1,5 @@
 const request = require('supertest');
-jest.mock('./db', () => {
+jest.mock('./backend/db', () => {
   const mockPoolQuery = jest.fn();
   return {
     pool: { query: mockPoolQuery },
@@ -14,10 +14,10 @@ jest.mock('jsonwebtoken', () => ({
   sign: jest.fn((payload, secret) => 'mock-jwt-token'),
   verify: jest.fn(),
 }));
-const db = require('./db');
+const db = require('./backend/db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { app, server } = require('./server');
+const { app, server } = require('./backend/server');
 
 describe('server.js', () => {
   afterAll((done) => {

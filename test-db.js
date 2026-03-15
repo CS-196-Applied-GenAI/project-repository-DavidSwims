@@ -4,7 +4,7 @@
  * Run with: node test-db.js
  */
 require('dotenv').config();
-const { testConnection } = require('./db');
+const { testConnection } = require('./backend/db');
 
 async function main() {
   try {
