@@ -1,0 +1,37 @@
+You should implement (at least) the following functionality in your program:
+1. Create an account
+○ Usernames should be unique, passwords should have some restrictions
+2. Login
+○ Users should not be able to accomplish any tasks or view content unless
+logged in
+3. Logout
+○ Users should not be able to accomplish any tasks or view content unless
+logged in
+4. Update profile
+○ Bio, username, profile picture
+5. Post (Tweet)
+○ There should be a character limit on tweets
+6. Delete a post
+7. View a feed of recent tweets
+○ Most recent to least, decide on how many tweets the page should show
+8. Refresh tweet feed
+9. Follow a user
+10. Unfollow a user
+11. Block a user
+○ Users should see no content from a blocked user, and vice versa
+12. Unblock a user
+13. Like a post
+14. Unlike a post
+15. Retweet a post
+16. Unretweet a post
+Given the compacted nature of this course, I am providing you with a database structure to work
+with. Access to the database structure and instructions for how to implement it can be found
+here: https://github.com/anyabdch/CS196-Database. A diagram of the database and detailed
+explanations of each field is available in the course files if you're interested in learning and/or as
+a valuable knowledge document for your generative tools. You may have zero use for this
+right now! Software developers often have different preferences as to when they start thinking
+about databases, so this will be available to you at all steps of the process.
+The grading for this portion will be awarded based on the amount of functionality that you
+implement. For each task that a user is able to complete, you will receive 2.5 points toward your
+overall grade, for a maximum of 40 points. You are absolutely welcome to include any additional
+functionality if you’d like too!

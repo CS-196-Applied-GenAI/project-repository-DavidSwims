@@ -1,0 +1,386 @@
+const express = require('express');
+const bcrypt = require('bcrypt');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+const jwt = require('jsonwebtoken');
+const { pool } = require('../db');
+const { authenticateToken } = require('../middleware/auth');
+
+const router = express.Router();
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+
+function getOptionalCurrentUserId(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    cb(null, `user-${req.user.id}-${Date.now()}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype || !file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only image files are allowed'));
+    }
+    cb(null, true);
+  },
+});
+
+/**
+ * PUT /api/users/me (protected)
+ * Update the authenticated user's profile: bio, username, profile_pic_url, password.
+ */
+router.put('/me', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const { bio, username, profile_pic_url, password } = req.body;
+
+  const fields = [];
+  const values = [];
+
+  if (username !== undefined) {
+    if (!username || username.trim() === '') {
+      return res.status(400).json({ error: 'Username cannot be empty' });
+    }
+    fields.push('username = ?');
+    values.push(username.trim());
+  }
+
+  if (bio !== undefined) {
+    fields.push('bio = ?');
+    values.push(bio);
+  }
+
+  if (profile_pic_url !== undefined) {
+    fields.push('profile_pic_url = ?');
+    values.push(profile_pic_url);
+  }
+
+  if (password !== undefined) {
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+    const password_hash = await bcrypt.hash(password, 10);
+    fields.push('password_hash = ?');
+    values.push(password_hash);
+  }
+
+  if (fields.length === 0) {
+    return res.status(400).json({ error: 'No fields to update' });
+  }
+
+  values.push(userId);
+
+  try {
+    await pool.query(
+      `UPDATE users SET ${fields.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    const [rows] = await pool.query(
+      'SELECT id, username, email, bio, profile_pic_url FROM users WHERE id = ?',
+      [userId]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: 'Username already taken' });
+    }
+    throw err;
+  }
+});
+
+/**
+ * POST /api/users/me/profile-picture (protected)
+ * Upload a profile picture file and save its URL to the user profile.
+ */
+router.post('/me/profile-picture', authenticateToken, (req, res) => {
+  upload.single('profile_picture')(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message || 'Upload failed' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const profilePicUrl = `/api/uploads/${req.file.filename}`;
+
+    try {
+      await pool.query(
+        'UPDATE users SET profile_pic_url = ? WHERE id = ?',
+        [profilePicUrl, req.user.id]
+      );
+
+      const [rows] = await pool.query(
+        'SELECT id, username, email, bio, profile_pic_url FROM users WHERE id = ?',
+        [req.user.id]
+      );
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      res.json(rows[0]);
+    } catch (dbErr) {
+      throw dbErr;
+    }
+  });
+});
+
+/**
+ * GET /api/users/search?q=username
+ * Search users by username. Supports limit and offset.
+ */
+router.get('/search/query', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  const offset = parseInt(req.query.offset, 10) || 0;
+
+  if (!q) {
+    return res.json({ users: [] });
+  }
+
+  try {
+    const [users] = await pool.query(
+      'SELECT id, username, email, bio, profile_pic_url FROM users WHERE username LIKE ? LIMIT ? OFFSET ?',
+      [`%${q}%`, limit, offset]
+    );
+    res.json({ users });
+  } catch (err) {
+    throw err;
+  }
+});
+
+/**
+ * GET /api/users/check-username?username=foo
+ * Returns whether a username is available.
+ */
+router.get('/check-username', async (req, res) => {
+  const username = (req.query.username || '').trim();
+
+  if (!username) {
+    return res.status(400).json({ error: 'username query param is required' });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      'SELECT id FROM users WHERE username = ?',
+      [username]
+    );
+
+    res.json({ available: rows.length === 0 });
+  } catch (err) {
+    throw err;
+  }
+});
+
+/**
+ * POST /api/users/:id/follow (protected)
+ * Toggle: follow if not following, unfollow if already following.
+ * Prevents self-follow (400).
+ */
+router.post('/:id/follow', authenticateToken, async (req, res) => {
+  const targetId = parseInt(req.params.id, 10);
+  const followerId = req.user.id;
+
+  if (followerId === targetId) {
+    return res.status(400).json({ error: 'Cannot follow yourself' });
+  }
+
+  try {
+    const [existing] = await pool.query(
+      'SELECT id FROM follows WHERE follower_id = ? AND following_id = ?',
+      [followerId, targetId]
+    );
+
+    if (existing.length > 0) {
+      await pool.query(
+        'DELETE FROM follows WHERE follower_id = ? AND following_id = ?',
+        [followerId, targetId]
+      );
+      return res.json({ following: false });
+    }
+
+    await pool.query(
+      'INSERT INTO follows (follower_id, following_id) VALUES (?, ?)',
+      [followerId, targetId]
+    );
+    res.json({ following: true });
+  } catch (err) {
+    throw err;
+  }
+});
+
+/**
+ * POST /api/users/:id/block (protected)
+ * Toggle: block if not blocked, unblock if already blocked.
+ * On block, also removes any follows between the two users.
+ */
+router.post('/:id/block', authenticateToken, async (req, res) => {
+  const blockedId = parseInt(req.params.id, 10);
+  const blockerId = req.user.id;
+
+  if (blockerId === blockedId) {
+    return res.status(400).json({ error: 'Cannot block yourself' });
+  }
+
+  try {
+    const [existing] = await pool.query(
+      'SELECT id FROM blocks WHERE blocker_id = ? AND blocked_id = ?',
+      [blockerId, blockedId]
+    );
+
+    if (existing.length > 0) {
+      await pool.query(
+        'DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?',
+        [blockerId, blockedId]
+      );
+      return res.json({ blocked: false });
+    }
+
+    // Remove any follows between the two users before blocking
+    await pool.query(
+      'DELETE FROM follows WHERE (follower_id = ? AND following_id = ?) OR (follower_id = ? AND following_id = ?)',
+      [blockerId, blockedId, blockedId, blockerId]
+    );
+
+    await pool.query(
+      'INSERT INTO blocks (blocker_id, blocked_id) VALUES (?, ?)',
+      [blockerId, blockedId]
+    );
+    res.json({ blocked: true });
+  } catch (err) {
+    throw err;
+  }
+});
+
+/**
+ * GET /api/users/:id/relationship (protected)
+ * Returns follow/block relationship from current user to target user.
+ */
+router.get('/:id/relationship', authenticateToken, async (req, res) => {
+  const targetId = parseInt(req.params.id, 10);
+  const currentUserId = req.user.id;
+
+  if (currentUserId === targetId) {
+    return res.json({ following: false, blocked: false });
+  }
+
+  try {
+    const [followingRows] = await pool.query(
+      'SELECT id FROM follows WHERE follower_id = ? AND following_id = ?',
+      [currentUserId, targetId]
+    );
+
+    const [blockedRows] = await pool.query(
+      'SELECT id FROM blocks WHERE blocker_id = ? AND blocked_id = ?',
+      [currentUserId, targetId]
+    );
+
+    res.json({
+      following: followingRows.length > 0,
+      blocked: blockedRows.length > 0,
+    });
+  } catch (err) {
+    throw err;
+  }
+});
+
+/**
+ * GET /api/users/:username
+ * Returns user profile with optional ?tab=tweets|likes
+ */
+router.get('/:username', async (req, res) => {
+  const { username } = req.params;
+  const tab = req.query.tab || 'tweets';
+  const currentUserId = getOptionalCurrentUserId(req) ?? -1;
+
+  try {
+    const [users] = await pool.query(
+      `SELECT
+         u.id,
+         u.username,
+         u.email,
+         u.bio,
+         u.profile_pic_url,
+         (SELECT COUNT(*) FROM follows f1 WHERE f1.following_id = u.id) AS followers_count,
+         (SELECT COUNT(*) FROM follows f2 WHERE f2.follower_id = u.id) AS following_count
+       FROM users u
+       WHERE u.username = ?`,
+      [username]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = users[0];
+
+    if (tab === 'tweets') {
+      const [tweets] = await pool.query(
+        `SELECT t.id, t.user_id, t.content, t.parent_tweet_id, t.created_at,
+                u.username, u.profile_pic_url,
+                (SELECT COUNT(*) FROM likes l WHERE l.tweet_id = t.id) AS like_count,
+                (SELECT COUNT(*) FROM retweets r WHERE r.tweet_id = t.id) AS retweet_count,
+                EXISTS(SELECT 1 FROM likes l2 WHERE l2.tweet_id = t.id AND l2.user_id = ?) AS liked_by_me,
+                EXISTS(SELECT 1 FROM retweets r2 WHERE r2.tweet_id = t.id AND r2.user_id = ?) AS retweeted_by_me
+         FROM tweets t
+         INNER JOIN users u ON u.id = t.user_id
+         WHERE t.user_id = ?
+         ORDER BY t.created_at DESC`,
+        [currentUserId, currentUserId, user.id]
+      );
+      return res.json({ ...user, tweets });
+    }
+
+    if (tab === 'likes') {
+      const [likes] = await pool.query(
+        `SELECT t.id, t.user_id, t.content, t.parent_tweet_id, t.created_at,
+                u.username, u.profile_pic_url,
+                (SELECT COUNT(*) FROM likes l3 WHERE l3.tweet_id = t.id) AS like_count,
+                (SELECT COUNT(*) FROM retweets r WHERE r.tweet_id = t.id) AS retweet_count,
+                EXISTS(SELECT 1 FROM likes l2 WHERE l2.tweet_id = t.id AND l2.user_id = ?) AS liked_by_me,
+                EXISTS(SELECT 1 FROM retweets r2 WHERE r2.tweet_id = t.id AND r2.user_id = ?) AS retweeted_by_me
+         FROM tweets t 
+         INNER JOIN users u ON u.id = t.user_id
+         INNER JOIN likes l ON t.id = l.tweet_id 
+         WHERE l.user_id = ? 
+         ORDER BY l.created_at DESC`,
+        [currentUserId, currentUserId, user.id]
+      );
+      return res.json({ ...user, likes });
+    }
+
+    res.json(user);
+  } catch (err) {
+    throw err;
+  }
+});
+
+module.exports = router;
