@@ -1,6 +1,21 @@
 # Wildcatwitter
 
+![Node.js](https://img.shields.io/badge/Node.js-Express-43853D?logo=node.js&logoColor=white)
+![React](https://img.shields.io/badge/React-Vite-61DAFB?logo=react&logoColor=black)
+![MySQL](https://img.shields.io/badge/Database-MySQL-4479A1?logo=mysql&logoColor=white)
+![Jest](https://img.shields.io/badge/Tests-Jest-C21325?logo=jest&logoColor=white)
+![Coverage](https://img.shields.io/badge/Coverage-92.03%25-brightgreen)
+![Course Project](https://img.shields.io/badge/CS196-Full--Stack%20Project-4B2E83)
+
 Wildcatwitter is a full-stack Twitter-style social app built for the CS 196 Applied Generative AI course project. It includes account creation, login, a personalized feed, profile editing, tweet creation, likes, retweets, comments, follow/unfollow, block/unblock, and integration tests for the backend behavior.
+
+## Highlights
+
+- Full-stack social app with authenticated user flows
+- Real MySQL-backed persistence for profiles, tweets, follows, blocks, likes, and retweets
+- Profile image upload support with local file selection
+- Persistent interaction state across navigation
+- Backend test coverage above the project threshold
 
 ## Overview
 
@@ -11,6 +26,28 @@ This repository contains:
 - Jest + Supertest backend and integration tests with coverage reporting
 
 The application is designed to run end-to-end locally with the frontend talking to the backend through a Vite development proxy.
+
+## Screenshots
+
+This section is structured for GitHub so screenshots can be dropped in later under a `docs/screenshots/` folder.
+
+Suggested screenshots to add:
+
+- Login / create account screen
+- Home feed with tweets and interactions
+- Profile page with edit profile flow
+- Comment or reply flow on a tweet
+
+Example layout:
+
+```markdown
+![Login Screen](docs/screenshots/login.png)
+![Home Feed](docs/screenshots/feed.png)
+![Profile Page](docs/screenshots/profile.png)
+![Comment Flow](docs/screenshots/comment.png)
+```
+
+If you want this section fully populated, add those image files to the repository and the links above will render automatically on GitHub.
 
 ## Features
 
@@ -69,6 +106,42 @@ package.json
 - Jest
 - Supertest
 - Istanbul coverage reporting
+
+## API Summary
+
+The backend exposes a small REST API under `/api`.
+
+### Authentication
+
+- `POST /api/auth/register` - create a new account
+- `POST /api/auth/login` - authenticate and receive a JWT
+- `POST /api/auth/logout` - log out on the client side
+- `GET /api/auth/me` - fetch the current authenticated user
+
+### Feed and Tweets
+
+- `GET /api/feed` - fetch the personalized feed
+- `POST /api/tweets` - create a tweet or comment
+- `DELETE /api/tweets/:id` - delete your own tweet
+- `POST /api/tweets/:id/like` - toggle like/unlike
+- `POST /api/tweets/:id/retweet` - toggle retweet/unretweet
+
+### Users and Profiles
+
+- `GET /api/users/:username` - fetch a user profile and tweets/likes
+- `PUT /api/users/me` - update your profile fields
+- `POST /api/users/me/profile-picture` - upload a profile image
+- `GET /api/users/search/query?q=...` - search users by username
+- `GET /api/users/check-username?username=...` - check username availability
+- `GET /api/users/:id/relationship` - fetch follow/block relationship state
+- `POST /api/users/:id/follow` - follow or unfollow a user
+- `POST /api/users/:id/block` - block or unblock a user
+
+### Response Style
+
+- JSON responses throughout
+- Protected endpoints require `Authorization: Bearer <token>`
+- Errors return an `error` field with a readable message
 
 ## Requirements
 
@@ -142,6 +215,22 @@ The Vite dev server proxies `/api` requests to `http://localhost:3000`.
 ### 3. Open the app
 
 Open the local frontend URL shown by Vite in your browser.
+
+## Quick Start
+
+```bash
+npm install
+cd frontend && npm install
+cd ..
+npm start
+```
+
+Then, in a second terminal:
+
+```bash
+cd frontend
+npm run dev
+```
 
 ## Available Scripts
 
