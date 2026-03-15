@@ -741,4 +741,74 @@ describe('server.js', () => {
       expect(response.body.users).toEqual([]);
     });
   });
+
+  describe('GET /api/users/:id/relationship', () => {
+    it('returns relationship booleans for authenticated user', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+      db.pool.query
+        .mockResolvedValueOnce([[{ id: 1 }]])
+        .mockResolvedValueOnce([[]]);
+
+      const response = await request(app)
+        .get('/api/users/2/relationship')
+        .set('Authorization', 'Bearer token');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ following: true, blocked: false });
+    });
+
+    it('returns false/false for self relationship', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+
+      const response = await request(app)
+        .get('/api/users/1/relationship')
+        .set('Authorization', 'Bearer token');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ following: false, blocked: false });
+      expect(db.pool.query).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/users/me/profile-picture', () => {
+    it('returns 401 when token is missing', async () => {
+      const response = await request(app).post('/api/users/me/profile-picture');
+
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual({ error: 'Access token required' });
+    });
+
+    it('returns 400 when no file is uploaded', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+
+      const response = await request(app)
+        .post('/api/users/me/profile-picture')
+        .set('Authorization', 'Bearer token');
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('No file uploaded');
+    });
+
+    it('uploads file and returns updated user', async () => {
+      jwt.verify.mockReturnValue({ id: 1, username: 'johndoe' });
+      db.pool.query
+        .mockResolvedValueOnce([{}])
+        .mockResolvedValueOnce([[{
+          id: 1,
+          username: 'johndoe',
+          email: 'john@example.com',
+          bio: null,
+          profile_pic_url: '/api/uploads/user-1-123.png',
+        }]]);
+
+      const response = await request(app)
+        .post('/api/users/me/profile-picture')
+        .set('Authorization', 'Bearer token')
+        .attach('profile_picture', Buffer.from('fake-image-data'), 'avatar.png');
+
+      expect(response.status).toBe(200);
+      expect(response.body.username).toBe('johndoe');
+      expect(response.body.profile_pic_url).toContain('/api/uploads/');
+    });
+  });
 });

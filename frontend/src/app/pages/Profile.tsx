@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 import { Loader2 } from 'lucide-react';
 import { TweetCard } from '../components/TweetCard';
 import { EditProfileModal } from '../components/EditProfileModal';
@@ -16,6 +16,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 export const Profile: React.FC = () => {
   const { username } = useParams<{ username: string }>();
+  const navigate = useNavigate();
   const { user: currentUser, token } = useAuth();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [tweets, setTweets] = useState<Tweet[]>([]);
@@ -268,10 +269,22 @@ export const Profile: React.FC = () => {
       )}
 
       {showEditModal && (
-        <EditProfileModal onClose={() => {
-          setShowEditModal(false);
-          loadProfile();
-        }} />
+        <EditProfileModal
+          onClose={() => {
+            setShowEditModal(false);
+          }}
+          onSaved={(updatedUser) => {
+            setProfileUser(updatedUser);
+            setShowEditModal(false);
+
+            if (username !== updatedUser.username) {
+              navigate(`/profile/${updatedUser.username}`);
+              return;
+            }
+
+            loadProfile();
+          }}
+        />
       )}
 
       {quoteTweet && (

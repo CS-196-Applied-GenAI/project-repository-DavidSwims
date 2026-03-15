@@ -3,18 +3,47 @@ import { Loader2 } from 'lucide-react';
 import { TweetCard } from '../components/TweetCard';
 import { ComposeModal } from '../components/ComposeModal';
 import { mockApiGetFeed, Tweet } from '../utils/mockApi';
+import { useAuth } from '../contexts/AuthContext';
 
 interface FeedProps {
   onCompose: () => void;
 }
 
 export const Feed: React.FC<FeedProps> = ({ onCompose }) => {
+  const { user } = useAuth();
   const [tweets, setTweets] = useState<Tweet[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [quoteTweet, setQuoteTweet] = useState<Tweet | null>(null);
   const [showNewTweetsToast, setShowNewTweetsToast] = useState(false);
+
+  const applyCurrentUserToTweet = (tweet: Tweet, currentUserId: number): Tweet => {
+    const updatedTweet = { ...tweet };
+
+    if (Number(updatedTweet.user_id) === Number(currentUserId)) {
+      updatedTweet.username = user?.username || updatedTweet.username;
+      updatedTweet.user = {
+        ...(updatedTweet.user || {
+          id: currentUserId,
+          email: user?.email || '',
+          bio: user?.bio || '',
+          created_at: user?.created_at || new Date().toISOString(),
+          profile_pic_url: '',
+          username: updatedTweet.username,
+        }),
+        username: user?.username || updatedTweet.username,
+        profile_pic_url: user?.profile_pic_url || '',
+        bio: user?.bio || '',
+      };
+    }
+
+    if (updatedTweet.quoted_tweet) {
+      updatedTweet.quoted_tweet = applyCurrentUserToTweet(updatedTweet.quoted_tweet, currentUserId);
+    }
+
+    return updatedTweet;
+  };
 
   const loadTweets = async (offset: number = 0, replace: boolean = false) => {
     if (offset === 0) {
@@ -62,6 +91,12 @@ export const Feed: React.FC<FeedProps> = ({ onCompose }) => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+
+    setTweets((prev) => prev.map((tweet) => applyCurrentUserToTweet(tweet, user.id)));
+  }, [user?.id, user?.username, user?.profile_pic_url, user?.bio]);
+
   // Infinite scroll
   useEffect(() => {
     const handleScroll = () => {
@@ -107,7 +142,17 @@ export const Feed: React.FC<FeedProps> = ({ onCompose }) => {
         className="border-b border-[var(--border-color)] p-4 cursor-pointer hover:bg-[var(--surface)] transition-colors"
       >
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-[var(--nu-purple)] opacity-50" />
+          {user?.profile_pic_url ? (
+            <img
+              src={user.profile_pic_url}
+              alt={user.username}
+              className="w-12 h-12 rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-[var(--nu-purple)] text-white flex items-center justify-center font-semibold">
+              {user?.username?.[0]?.toUpperCase() || 'W'}
+            </div>
+          )}
           <div className="flex-1 text-[var(--text-muted)]">
             What's happening, Wildcat?
           </div>

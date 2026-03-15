@@ -270,7 +270,12 @@ const mockPoolQuery = jest.fn(async (sql, params = []) => {
   }
 
   if (sql.includes('FROM tweets t') && sql.includes('INNER JOIN follows f ON')) {
-    const [userId, blockerIdA, blockerIdB, limit, offset] = params.map(Number);
+    const numericParams = params.map(Number);
+    const userId = numericParams[2] ?? numericParams[0];
+    const blockerIdA = numericParams[3] ?? userId;
+    const blockerIdB = numericParams[4] ?? userId;
+    const limit = numericParams[numericParams.length - 2];
+    const offset = numericParams[numericParams.length - 1];
     const followedIds = new Set(
       state.follows.filter((f) => f.follower_id === userId).map((f) => f.following_id)
     );
@@ -288,13 +293,31 @@ const mockPoolQuery = jest.fn(async (sql, params = []) => {
       .filter((t) => !blockedSet.has(`${userId}:${t.user_id}`))
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(offset, offset + limit)
-      .map((t) => ({ ...t, username: state.users.find((u) => u.id === t.user_id)?.username || 'unknown' }));
+      .map((t) => {
+        const tweetLikes = state.likes.filter((l) => l.tweet_id === t.id).length;
+        const tweetRetweets = state.retweets.filter((r) => r.tweet_id === t.id).length;
+        const author = state.users.find((u) => u.id === t.user_id);
+        return {
+          ...t,
+          username: author?.username || 'unknown',
+          profile_pic_url: author?.profile_pic_url || '',
+          like_count: tweetLikes,
+          retweet_count: tweetRetweets,
+          liked_by_me: state.likes.some((l) => l.tweet_id === t.id && l.user_id === userId),
+          retweeted_by_me: state.retweets.some((r) => r.tweet_id === t.id && r.user_id === userId),
+        };
+      });
 
     return [rows];
   }
 
   if (sql.includes('FROM tweets t') && sql.includes('WHERE t.user_id NOT IN (SELECT following_id FROM follows WHERE follower_id = ?)')) {
-    const [userId, blockerIdA, blockerIdB, limit, offset] = params.map(Number);
+    const numericParams = params.map(Number);
+    const userId = numericParams[2] ?? numericParams[0];
+    const blockerIdA = numericParams[3] ?? userId;
+    const blockerIdB = numericParams[4] ?? userId;
+    const limit = numericParams[numericParams.length - 2];
+    const offset = numericParams[numericParams.length - 1];
     const followedIds = new Set(
       state.follows.filter((f) => f.follower_id === userId).map((f) => f.following_id)
     );
@@ -312,7 +335,20 @@ const mockPoolQuery = jest.fn(async (sql, params = []) => {
       .filter((t) => !blockedSet.has(`${userId}:${t.user_id}`))
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(offset, offset + limit)
-      .map((t) => ({ ...t, username: state.users.find((u) => u.id === t.user_id)?.username || 'unknown' }));
+      .map((t) => {
+        const tweetLikes = state.likes.filter((l) => l.tweet_id === t.id).length;
+        const tweetRetweets = state.retweets.filter((r) => r.tweet_id === t.id).length;
+        const author = state.users.find((u) => u.id === t.user_id);
+        return {
+          ...t,
+          username: author?.username || 'unknown',
+          profile_pic_url: author?.profile_pic_url || '',
+          like_count: tweetLikes,
+          retweet_count: tweetRetweets,
+          liked_by_me: state.likes.some((l) => l.tweet_id === t.id && l.user_id === userId),
+          retweeted_by_me: state.retweets.some((r) => r.tweet_id === t.id && r.user_id === userId),
+        };
+      });
 
     return [rows];
   }

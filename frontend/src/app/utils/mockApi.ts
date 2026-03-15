@@ -19,6 +19,8 @@ export interface Tweet {
   created_at: string;
   like_count: number;
   retweet_count: number;
+  liked_by_me?: boolean;
+  retweeted_by_me?: boolean;
   is_retweet: boolean;
   original_user?: string;
   user?: User;
@@ -83,7 +85,41 @@ function normalizeUser(raw: Partial<User>): User {
   };
 }
 
+function normalizeTimestamp(ts: unknown): string {
+  if (!ts) return new Date().toISOString();
+
+  if (ts instanceof Date) {
+    return ts.toISOString();
+  }
+
+  if (typeof ts !== 'string') {
+    return new Date(String(ts)).toISOString();
+  }
+
+  const value = ts.trim();
+
+  // If DB returns `YYYY-MM-DD HH:mm:ss`, convert to ISO-like format.
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) {
+    return value.replace(' ', 'T');
+  }
+
+  return value;
+}
+
 function normalizeTweet(raw: any): Tweet {
+  const derivedUser = raw.user
+    ? normalizeUser(raw.user)
+    : raw.profile_pic_url || raw.email || raw.bio || raw.created_at || raw.username
+      ? normalizeUser({
+          id: Number(raw.user_id || 0),
+          username: raw.username || 'unknown',
+          email: raw.email || '',
+          bio: raw.bio || '',
+          profile_pic_url: raw.profile_pic_url || '',
+          created_at: raw.created_at || new Date().toISOString(),
+        })
+      : undefined;
+
   return {
     id: raw.id,
     user_id: raw.user_id,
@@ -91,15 +127,46 @@ function normalizeTweet(raw: any): Tweet {
     content: raw.content || '',
     parent_tweet_id: raw.parent_tweet_id ?? null,
     quoted_tweet_id: raw.quoted_tweet_id ?? null,
-    created_at: raw.created_at,
+    created_at: normalizeTimestamp(raw.created_at),
     like_count: raw.like_count ?? 0,
     retweet_count: raw.retweet_count ?? 0,
+    liked_by_me: Boolean(raw.liked_by_me),
+    retweeted_by_me: Boolean(raw.retweeted_by_me),
     is_retweet: raw.is_retweet ?? false,
     original_user: raw.original_user,
-    user: raw.user ? normalizeUser(raw.user) : undefined,
+    user: derivedUser,
     quoted_tweet: raw.quoted_tweet ? normalizeTweet(raw.quoted_tweet) : null,
     deleted: raw.deleted,
   };
+}
+
+function attachQuotedTweets(tweets: Tweet[]): Tweet[] {
+  const byId = new Map<number, Tweet>();
+  for (const tweet of tweets) {
+    byId.set(tweet.id, tweet);
+  }
+
+  return tweets.map((tweet) => {
+    if (tweet.quoted_tweet) {
+      return tweet;
+    }
+
+    if (!tweet.parent_tweet_id) {
+      return tweet;
+    }
+
+    const parent = byId.get(tweet.parent_tweet_id);
+    if (!parent) {
+      return tweet;
+    }
+
+    return {
+      ...tweet,
+      quoted_tweet: {
+        ...parent,
+      },
+    };
+  });
 }
 
 // No-op now that we use real backend data.
@@ -159,6 +226,33 @@ export const mockApiUpdateProfile = async (
   return normalizeUser(data);
 };
 
+export const mockApiUploadProfilePicture = async (
+  file: File
+): Promise<User> => {
+  const token = getToken();
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+
+  const formData = new FormData();
+  formData.append('profile_picture', file);
+
+  const res = await fetch(`${API_BASE}/users/me/profile-picture`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to upload profile picture');
+  }
+
+  return normalizeUser(data);
+};
+
 export const mockApiGetFeed = async (
   limit: number = 20,
   offset: number = 0
@@ -169,7 +263,8 @@ export const mockApiGetFeed = async (
     true
   );
 
-  return (data.tweets || []).map(normalizeTweet);
+  const normalized = (data.tweets || []).map(normalizeTweet);
+  return attachQuotedTweets(normalized);
 };
 
 export const mockApiPostTweet = async (
@@ -223,8 +318,15 @@ export const mockApiGetUserProfile = async (
 ): Promise<{ user: User; tweets: Tweet[] }> => {
   const data = await request<any>(`/users/${username}?tab=${tab}`, {}, true);
   const user = normalizeUser(data);
-  const tweets = ((tab === 'likes' ? data.likes : data.tweets) || []).map(normalizeTweet);
-  return { user, tweets };
+  const tweets = ((tab === 'likes' ? data.likes : data.tweets) || []).map((tweet: any) =>
+    normalizeTweet({
+      ...tweet,
+      username: tweet.username || user.username,
+      user: tweet.user || user,
+    })
+  );
+
+  return { user, tweets: attachQuotedTweets(tweets) };
 };
 
 export const mockApiSearchUsers = async (query: string): Promise<User[]> => {
@@ -284,6 +386,6 @@ export const mockApiGetRelationship = async (
   );
 };
 
-// Feed payload currently does not include per-user liked/retweeted flags.
+// Deprecated fallback helpers kept for compatibility.
 export const mockApiGetLikeStatus = (_token: string, _tweetId: number): boolean => false;
 export const mockApiGetRetweetStatus = (_token: string, _tweetId: number): boolean => false;

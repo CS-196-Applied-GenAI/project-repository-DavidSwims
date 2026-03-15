@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Heart, Repeat2, MessageSquareQuote, Trash2, MoreVertical } from 'lucide-react';
-import { Tweet, mockApiToggleLike, mockApiToggleRetweet, mockApiDeleteTweet, mockApiGetLikeStatus, mockApiGetRetweetStatus } from '../utils/mockApi';
+import { Tweet, mockApiToggleLike, mockApiToggleRetweet, mockApiDeleteTweet } from '../utils/mockApi';
 import { useAuth } from '../contexts/AuthContext';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
-import { formatDistanceToNow } from 'date-fns';
 
 interface TweetCardProps {
   tweet: Tweet;
@@ -13,12 +12,19 @@ interface TweetCardProps {
 
 export const TweetCard: React.FC<TweetCardProps> = ({ tweet, onQuote, onDelete }) => {
   const { user, token } = useAuth();
-  const [liked, setLiked] = useState(token ? mockApiGetLikeStatus(token, tweet.id) : false);
-  const [retweeted, setRetweeted] = useState(token ? mockApiGetRetweetStatus(token, tweet.id) : false);
+  const [liked, setLiked] = useState(Boolean(tweet.liked_by_me));
+  const [retweeted, setRetweeted] = useState(Boolean(tweet.retweeted_by_me));
   const [likeCount, setLikeCount] = useState(tweet.like_count);
   const [retweetCount, setRetweetCount] = useState(tweet.retweet_count);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+
+  useEffect(() => {
+    setLiked(Boolean(tweet.liked_by_me));
+    setRetweeted(Boolean(tweet.retweeted_by_me));
+    setLikeCount(tweet.like_count ?? 0);
+    setRetweetCount(tweet.retweet_count ?? 0);
+  }, [tweet.id, tweet.liked_by_me, tweet.retweeted_by_me, tweet.like_count, tweet.retweet_count]);
 
   const isOwner = user?.id === tweet.user_id;
 
@@ -86,7 +92,65 @@ export const TweetCard: React.FC<TweetCardProps> = ({ tweet, onQuote, onDelete }
     );
   };
 
-  const timeAgo = formatDistanceToNow(new Date(tweet.created_at), { addSuffix: true });
+  const formatElapsedTime = (input: string) => {
+    const now = Date.now();
+
+    const parseBestDate = (raw: string): Date | null => {
+      const value = raw.trim();
+      const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(value);
+
+      if (hasTz) {
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+      }
+
+      const normalized = value.includes(' ') ? value.replace(' ', 'T') : value;
+      const localParsed = new Date(normalized);
+      const utcParsed = new Date(`${normalized}Z`);
+
+      const localValid = !Number.isNaN(localParsed.getTime());
+      const utcValid = !Number.isNaN(utcParsed.getTime());
+
+      if (!localValid && !utcValid) return null;
+      if (localValid && !utcValid) return localParsed;
+      if (!localValid && utcValid) return utcParsed;
+
+      const localFuture = localParsed.getTime() > now + 60_000;
+      const utcFuture = utcParsed.getTime() > now + 60_000;
+
+      if (!localFuture && utcFuture) return localParsed;
+      if (localFuture && !utcFuture) return utcParsed;
+
+      const localDiff = Math.abs(now - localParsed.getTime());
+      const utcDiff = Math.abs(now - utcParsed.getTime());
+      return localDiff <= utcDiff ? localParsed : utcParsed;
+    };
+
+    const date = parseBestDate(input);
+    if (!date) return 'just now';
+
+    let diffSeconds = Math.floor((now - date.getTime()) / 1000);
+
+    if (diffSeconds < 0) {
+      return 'just now';
+    }
+
+    if (diffSeconds < 10) return 'just now';
+    if (diffSeconds < 60) return `${diffSeconds} seconds ago`;
+
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`;
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+
+    return date.toLocaleDateString();
+  };
+
+  const timeAgo = formatElapsedTime(tweet.created_at);
 
   return (
     <>

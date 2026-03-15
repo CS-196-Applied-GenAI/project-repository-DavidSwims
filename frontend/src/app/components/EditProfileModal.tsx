@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { mockApiUpdateProfile } from '../utils/mockApi';
+import { mockApiUpdateProfile, mockApiUploadProfilePicture, User } from '../utils/mockApi';
 
 interface EditProfileModalProps {
   onClose: () => void;
+  onSaved?: (user: User) => void;
 }
 
-export const EditProfileModal: React.FC<EditProfileModalProps> = ({ onClose }) => {
+export const EditProfileModal: React.FC<EditProfileModalProps> = ({ onClose, onSaved }) => {
   const { user, token, updateUser } = useAuth();
   const [username, setUsername] = useState(user?.username || '');
   const [bio, setBio] = useState(user?.bio || '');
-  const [profilePicUrl, setProfilePicUrl] = useState(user?.profile_pic_url || '');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -23,12 +24,17 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ onClose }) =
     setError('');
 
     try {
-      const updatedUser = await mockApiUpdateProfile(token, {
+      let updatedUser = await mockApiUpdateProfile(token, {
         username,
         bio,
-        profile_pic_url: profilePicUrl,
       });
+
+      if (selectedFile) {
+        updatedUser = await mockApiUploadProfilePicture(selectedFile);
+      }
+
       updateUser(updatedUser);
+      onSaved?.(updatedUser);
       onClose();
     } catch (err) {
       setError((err as Error).message);
@@ -82,20 +88,19 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ onClose }) =
 
           <div>
             <label htmlFor="profilePic" className="block mb-2">
-              Profile Picture URL
+              Profile Picture
             </label>
             <input
               id="profilePic"
-              type="url"
-              value={profilePicUrl}
-              onChange={(e) => setProfilePicUrl(e.target.value)}
+              type="file"
+              accept="image/*"
+              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
               className="w-full px-4 py-2 border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--nu-purple)]"
-              placeholder="https://example.com/image.jpg"
             />
-            {profilePicUrl && (
+            {(selectedFile || user?.profile_pic_url) && (
               <div className="mt-2">
                 <img
-                  src={profilePicUrl}
+                  src={selectedFile ? URL.createObjectURL(selectedFile) : user?.profile_pic_url}
                   alt="Preview"
                   className="w-20 h-20 rounded-full object-cover"
                   onError={(e) => {

@@ -1,9 +1,38 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
 const { pool } = require('../db');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    cb(null, `user-${req.user.id}-${Date.now()}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype || !file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only image files are allowed'));
+    }
+    cb(null, true);
+  },
+});
 
 /**
  * PUT /api/users/me (protected)
@@ -66,6 +95,44 @@ router.put('/me', authenticateToken, async (req, res) => {
     }
     throw err;
   }
+});
+
+/**
+ * POST /api/users/me/profile-picture (protected)
+ * Upload a profile picture file and save its URL to the user profile.
+ */
+router.post('/me/profile-picture', authenticateToken, (req, res) => {
+  upload.single('profile_picture')(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message || 'Upload failed' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const profilePicUrl = `/api/uploads/${req.file.filename}`;
+
+    try {
+      await pool.query(
+        'UPDATE users SET profile_pic_url = ? WHERE id = ?',
+        [profilePicUrl, req.user.id]
+      );
+
+      const [rows] = await pool.query(
+        'SELECT id, username, email, bio, profile_pic_url FROM users WHERE id = ?',
+        [req.user.id]
+      );
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      res.json(rows[0]);
+    } catch (dbErr) {
+      throw dbErr;
+    }
+  });
 });
 
 /**

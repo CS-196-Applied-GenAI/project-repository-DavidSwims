@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { testConnection } = require('./db');
 const authRoutes = require('./routes/auth');
 const tweetsRoutes = require('./routes/tweets');
@@ -10,6 +11,7 @@ const feedRoutes = require('./routes/feed');
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/auth', authRoutes);
 app.use('/api/tweets', tweetsRoutes);
 app.use('/api/users', usersRoutes);
