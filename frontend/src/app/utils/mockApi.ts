@@ -5,6 +5,8 @@ export interface User {
   bio: string;
   profile_pic_url: string;
   created_at: string;
+  followers_count?: number;
+  following_count?: number;
 }
 
 export interface Tweet {
@@ -76,6 +78,8 @@ function normalizeUser(raw: Partial<User>): User {
     bio: raw.bio || '',
     profile_pic_url: raw.profile_pic_url || '',
     created_at: raw.created_at || new Date().toISOString(),
+    followers_count: Number(raw.followers_count || 0),
+    following_count: Number(raw.following_count || 0),
   };
 }
 
@@ -265,6 +269,17 @@ export const mockApiToggleBlock = async (
   return request<{ blocked: boolean }>(
     `/users/${targetUserId}/block`,
     { method: 'POST' },
+    true
+  );
+};
+
+export const mockApiGetRelationship = async (
+  _token: string,
+  targetUserId: number
+): Promise<{ following: boolean; blocked: boolean }> => {
+  return request<{ following: boolean; blocked: boolean }>(
+    `/users/${targetUserId}/relationship`,
+    {},
     true
   );
 };

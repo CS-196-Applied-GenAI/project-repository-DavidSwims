@@ -196,6 +196,38 @@ router.post('/:id/block', authenticateToken, async (req, res) => {
 });
 
 /**
+ * GET /api/users/:id/relationship (protected)
+ * Returns follow/block relationship from current user to target user.
+ */
+router.get('/:id/relationship', authenticateToken, async (req, res) => {
+  const targetId = parseInt(req.params.id, 10);
+  const currentUserId = req.user.id;
+
+  if (currentUserId === targetId) {
+    return res.json({ following: false, blocked: false });
+  }
+
+  try {
+    const [followingRows] = await pool.query(
+      'SELECT id FROM follows WHERE follower_id = ? AND following_id = ?',
+      [currentUserId, targetId]
+    );
+
+    const [blockedRows] = await pool.query(
+      'SELECT id FROM blocks WHERE blocker_id = ? AND blocked_id = ?',
+      [currentUserId, targetId]
+    );
+
+    res.json({
+      following: followingRows.length > 0,
+      blocked: blockedRows.length > 0,
+    });
+  } catch (err) {
+    throw err;
+  }
+});
+
+/**
  * GET /api/users/:username
  * Returns user profile with optional ?tab=tweets|likes
  */
@@ -205,7 +237,16 @@ router.get('/:username', async (req, res) => {
 
   try {
     const [users] = await pool.query(
-      'SELECT id, username, email, bio, profile_pic_url FROM users WHERE username = ?',
+      `SELECT
+         u.id,
+         u.username,
+         u.email,
+         u.bio,
+         u.profile_pic_url,
+         (SELECT COUNT(*) FROM follows f1 WHERE f1.following_id = u.id) AS followers_count,
+         (SELECT COUNT(*) FROM follows f2 WHERE f2.follower_id = u.id) AS following_count
+       FROM users u
+       WHERE u.username = ?`,
       [username]
     );
 

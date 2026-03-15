@@ -10,7 +10,7 @@ export const AuthGate: React.FC = () => {
         <div className="bg-white/10 backdrop-blur-md rounded-3xl p-12 border border-white/20">
           <div className="flex items-center justify-center gap-3 mb-6">
             <span className="text-6xl">🐾</span>
-            <h1 className="text-5xl font-bold text-white">Wildcat</h1>
+            <h1 className="text-5xl font-bold text-white">Wildcatwitter</h1>
           </div>
           
           <p className="text-xl text-white/90 mb-8">

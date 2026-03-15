@@ -4,18 +4,29 @@ import { Loader2 } from 'lucide-react';
 import { TweetCard } from '../components/TweetCard';
 import { EditProfileModal } from '../components/EditProfileModal';
 import { ComposeModal } from '../components/ComposeModal';
-import { mockApiGetUserProfile, User, Tweet } from '../utils/mockApi';
+import {
+  mockApiGetUserProfile,
+  mockApiGetRelationship,
+  mockApiToggleFollow,
+  mockApiToggleBlock,
+  User,
+  Tweet,
+} from '../utils/mockApi';
 import { useAuth } from '../contexts/AuthContext';
 
 export const Profile: React.FC = () => {
   const { username } = useParams<{ username: string }>();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, token } = useAuth();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [tweets, setTweets] = useState<Tweet[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'tweets' | 'likes'>('tweets');
   const [showEditModal, setShowEditModal] = useState(false);
   const [quoteTweet, setQuoteTweet] = useState<Tweet | null>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [relationshipLoading, setRelationshipLoading] = useState<'follow' | 'block' | null>(null);
+  const [relationshipError, setRelationshipError] = useState('');
 
   const isOwnProfile = currentUser?.username === username;
 
@@ -27,6 +38,15 @@ export const Profile: React.FC = () => {
       const { user, tweets: userTweets } = await mockApiGetUserProfile(username, tab);
       setProfileUser(user);
       setTweets(userTweets);
+
+      if (currentUser && token && currentUser.username !== user.username) {
+        const relationship = await mockApiGetRelationship(token, user.id);
+        setIsFollowing(relationship.following);
+        setIsBlocked(relationship.blocked);
+      } else {
+        setIsFollowing(false);
+        setIsBlocked(false);
+      }
     } catch (err) {
       console.error('Failed to load profile:', err);
     } finally {
@@ -36,7 +56,42 @@ export const Profile: React.FC = () => {
 
   useEffect(() => {
     loadProfile();
-  }, [username, tab]);
+  }, [username, tab, currentUser?.username, token]);
+
+  const handleFollowToggle = async () => {
+    if (!token || !profileUser || isOwnProfile) return;
+
+    setRelationshipLoading('follow');
+    setRelationshipError('');
+    try {
+      const result = await mockApiToggleFollow(token, profileUser.id);
+      setIsFollowing(result.following);
+      await loadProfile();
+    } catch (err) {
+      setRelationshipError((err as Error).message || 'Failed to update follow status');
+    } finally {
+      setRelationshipLoading(null);
+    }
+  };
+
+  const handleBlockToggle = async () => {
+    if (!token || !profileUser || isOwnProfile) return;
+
+    setRelationshipLoading('block');
+    setRelationshipError('');
+    try {
+      const result = await mockApiToggleBlock(token, profileUser.id);
+      setIsBlocked(result.blocked);
+      if (result.blocked) {
+        setIsFollowing(false);
+      }
+      await loadProfile();
+    } catch (err) {
+      setRelationshipError((err as Error).message || 'Failed to update block status');
+    } finally {
+      setRelationshipLoading(null);
+    }
+  };
 
   const getAvatarContent = () => {
     if (profileUser?.profile_pic_url) {
@@ -101,7 +156,47 @@ export const Profile: React.FC = () => {
                 Edit Profile
               </button>
             )}
+
+            {!isOwnProfile && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleFollowToggle}
+                  disabled={relationshipLoading !== null}
+                  className={`px-5 py-2 rounded-full transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                    isFollowing
+                      ? 'border-2 border-[var(--nu-purple)] text-[var(--nu-purple)] hover:bg-[var(--nu-purple-light)]'
+                      : 'bg-[var(--nu-purple)] text-white hover:bg-[var(--nu-purple-hover)]'
+                  }`}
+                >
+                  {relationshipLoading === 'follow'
+                    ? 'Working...'
+                    : isFollowing
+                    ? 'Unfollow'
+                    : 'Follow'}
+                </button>
+
+                <button
+                  onClick={handleBlockToggle}
+                  disabled={relationshipLoading !== null}
+                  className={`px-5 py-2 rounded-full border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                    isBlocked
+                      ? 'border-[var(--error)] bg-red-50 text-[var(--error)] hover:bg-red-100'
+                      : 'border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--surface)]'
+                  }`}
+                >
+                  {relationshipLoading === 'block'
+                    ? 'Working...'
+                    : isBlocked
+                    ? 'Unblock'
+                    : 'Block'}
+                </button>
+              </div>
+            )}
           </div>
+
+          {relationshipError && !isOwnProfile && (
+            <div className="mb-3 text-sm text-[var(--error)]">{relationshipError}</div>
+          )}
 
           {profileUser.bio && (
             <p className="mb-4">{profileUser.bio}</p>
@@ -113,11 +208,11 @@ export const Profile: React.FC = () => {
               <span className="text-[var(--text-muted)]">Tweets</span>
             </div>
             <div>
-              <span className="font-semibold">0</span>{' '}
+              <span className="font-semibold">{profileUser.following_count ?? 0}</span>{' '}
               <span className="text-[var(--text-muted)]">Following</span>
             </div>
             <div>
-              <span className="font-semibold">0</span>{' '}
+              <span className="font-semibold">{profileUser.followers_count ?? 0}</span>{' '}
               <span className="text-[var(--text-muted)]">Followers</span>
             </div>
           </div>

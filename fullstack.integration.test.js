@@ -104,16 +104,22 @@ const mockPoolQuery = jest.fn(async (sql, params = []) => {
     return [{}];
   }
 
-  if (sql.includes('SELECT id, username, email, bio, profile_pic_url FROM users WHERE username = ?')) {
+  if (sql.includes('FROM users u') && sql.includes('WHERE u.username = ?')) {
     const username = params[0];
     const user = state.users.find((u) => u.username === username);
     if (!user) return [[]];
+
+    const followersCount = state.follows.filter((f) => f.following_id === user.id).length;
+    const followingCount = state.follows.filter((f) => f.follower_id === user.id).length;
+
     return [[{
       id: user.id,
       username: user.username,
       email: user.email,
       bio: user.bio,
       profile_pic_url: user.profile_pic_url,
+      followers_count: followersCount,
+      following_count: followingCount,
     }]];
   }
 
@@ -432,6 +438,12 @@ describe('fullstack integration (frontend contract to backend endpoints)', () =>
     expect(followRes.status).toBe(200);
     expect(followRes.body).toEqual({ following: true });
 
+    const relationshipAfterFollowRes = await request(app)
+      .get('/api/users/2/relationship')
+      .set('Authorization', `Bearer ${token}`);
+    expect(relationshipAfterFollowRes.status).toBe(200);
+    expect(relationshipAfterFollowRes.body).toEqual({ following: true, blocked: false });
+
     const unfollowRes = await request(app)
       .post('/api/users/2/follow')
       .set('Authorization', `Bearer ${token}`);
@@ -444,11 +456,23 @@ describe('fullstack integration (frontend contract to backend endpoints)', () =>
     expect(blockRes.status).toBe(200);
     expect(blockRes.body).toEqual({ blocked: true });
 
+    const relationshipAfterBlockRes = await request(app)
+      .get('/api/users/2/relationship')
+      .set('Authorization', `Bearer ${token}`);
+    expect(relationshipAfterBlockRes.status).toBe(200);
+    expect(relationshipAfterBlockRes.body).toEqual({ following: false, blocked: true });
+
     const unblockRes = await request(app)
       .post('/api/users/2/block')
       .set('Authorization', `Bearer ${token}`);
     expect(unblockRes.status).toBe(200);
     expect(unblockRes.body).toEqual({ blocked: false });
+
+    const relationshipAfterUnblockRes = await request(app)
+      .get('/api/users/2/relationship')
+      .set('Authorization', `Bearer ${token}`);
+    expect(relationshipAfterUnblockRes.status).toBe(200);
+    expect(relationshipAfterUnblockRes.body).toEqual({ following: false, blocked: false });
   });
 
   it('covers profile tabs contract: tweets and likes', async () => {

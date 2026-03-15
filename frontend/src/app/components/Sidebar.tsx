@@ -31,7 +31,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onCompose }) => {
       <Link to="/" className="flex items-center gap-2 mb-8 p-2">
         <span className="text-2xl">🐾</span>
         <span className="text-2xl font-bold" style={{ color: 'var(--nu-purple)' }}>
-          Wildcat
+          Wildcatwitter
         </span>
       </Link>
 
