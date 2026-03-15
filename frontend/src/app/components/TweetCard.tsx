@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Heart, Repeat2, MessageSquareQuote, Trash2, MoreVertical } from 'lucide-react';
+import { Link } from 'react-router';
 import { Tweet, mockApiToggleLike, mockApiToggleRetweet, mockApiDeleteTweet } from '../utils/mockApi';
 import { useAuth } from '../contexts/AuthContext';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -163,13 +164,25 @@ export const TweetCard: React.FC<TweetCardProps> = ({ tweet, onQuote, onDelete }
         )}
 
         <div className="flex gap-3">
-          {getAvatarContent(tweet.username, tweet.user?.profile_pic_url)}
+          <Link
+            to={`/profile/${tweet.username}`}
+            className="shrink-0"
+            aria-label={`View ${tweet.username}'s profile`}
+          >
+            {getAvatarContent(tweet.username, tweet.user?.profile_pic_url)}
+          </Link>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2 mb-1">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="font-semibold truncate">{tweet.username}</span>
-                <span className="text-[var(--text-muted)] truncate">@{tweet.username}</span>
+                <Link
+                  to={`/profile/${tweet.username}`}
+                  className="flex items-center gap-2 min-w-0 hover:underline"
+                  aria-label={`Open ${tweet.username}'s profile`}
+                >
+                  <span className="font-semibold truncate">{tweet.username}</span>
+                  <span className="text-[var(--text-muted)] truncate">@{tweet.username}</span>
+                </Link>
                 <span className="text-[var(--text-muted)]">·</span>
                 <span className="text-[var(--text-muted)] text-sm whitespace-nowrap">{timeAgo}</span>
               </div>
@@ -220,9 +233,21 @@ export const TweetCard: React.FC<TweetCardProps> = ({ tweet, onQuote, onDelete }
                 ) : (
                   <>
                     <div className="flex items-center gap-2 mb-1">
-                      {getAvatarContent(tweet.quoted_tweet.username, tweet.quoted_tweet.user?.profile_pic_url)}
-                      <span className="font-semibold text-sm">{tweet.quoted_tweet.username}</span>
-                      <span className="text-[var(--text-muted)] text-sm">@{tweet.quoted_tweet.username}</span>
+                      <Link
+                        to={`/profile/${tweet.quoted_tweet.username}`}
+                        className="shrink-0"
+                        aria-label={`View ${tweet.quoted_tweet.username}'s profile`}
+                      >
+                        {getAvatarContent(tweet.quoted_tweet.username, tweet.quoted_tweet.user?.profile_pic_url)}
+                      </Link>
+                      <Link
+                        to={`/profile/${tweet.quoted_tweet.username}`}
+                        className="flex items-center gap-2 hover:underline"
+                        aria-label={`Open ${tweet.quoted_tweet.username}'s profile`}
+                      >
+                        <span className="font-semibold text-sm">{tweet.quoted_tweet.username}</span>
+                        <span className="text-[var(--text-muted)] text-sm">@{tweet.quoted_tweet.username}</span>
+                      </Link>
                     </div>
                     <p className="text-sm">{tweet.quoted_tweet.content}</p>
                   </>
@@ -255,9 +280,10 @@ export const TweetCard: React.FC<TweetCardProps> = ({ tweet, onQuote, onDelete }
                   onQuote?.(tweet);
                 }}
                 className="flex items-center gap-2 hover:text-[var(--nu-purple)] transition-colors group"
-                aria-label="Quote tweet"
+                aria-label="Comment on tweet"
               >
                 <MessageSquareQuote className="w-5 h-5" />
+                <span className="text-sm">Comment</span>
               </button>
             </div>
           </div>

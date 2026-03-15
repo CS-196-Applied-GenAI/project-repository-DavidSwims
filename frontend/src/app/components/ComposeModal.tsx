@@ -13,6 +13,7 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ onClose, quotedTweet
   const { user, token } = useAuth();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
+  const isReply = Boolean(quotedTweet);
 
   const charCount = content.length;
   const maxChars = 280;
@@ -53,7 +54,7 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ onClose, quotedTweet
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-[var(--border-color)]">
           <h2 className="text-xl font-semibold">
-            {quotedTweet ? 'Quote Tweet' : 'Create Post'}
+            {isReply ? 'Comment on Post' : 'Create Post'}
           </h2>
           <button
             onClick={onClose}
@@ -72,13 +73,16 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ onClose, quotedTweet
               <textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="What's happening, Wildcat?"
+                placeholder={isReply ? `Write a comment to @${quotedTweet?.username}` : "What's happening, Wildcat?"}
                 className="w-full min-h-[120px] text-lg resize-none focus:outline-none"
                 autoFocus
               />
 
               {quotedTweet && (
                 <div className="mt-3 border-l-4 border-[var(--nu-purple)] bg-[var(--surface)] p-3 rounded-lg">
+                  <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)] mb-2">
+                    Replying to
+                  </p>
                   <div className="flex items-center gap-2 mb-1">
                     {quotedTweet.user?.profile_pic_url ? (
                       <img
@@ -116,7 +120,7 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ onClose, quotedTweet
                   className="px-6 py-2 bg-[var(--nu-purple)] text-white rounded-full hover:bg-[var(--nu-purple-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Post
+                  {isReply ? 'Comment' : 'Post'}
                 </button>
               </div>
             </div>

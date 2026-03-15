@@ -3,11 +3,29 @@ const bcrypt = require('bcrypt');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const jwt = require('jsonwebtoken');
 const { pool } = require('../db');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 const uploadsDir = path.join(__dirname, '..', 'uploads');
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+
+function getOptionalCurrentUserId(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -301,6 +319,7 @@ router.get('/:id/relationship', authenticateToken, async (req, res) => {
 router.get('/:username', async (req, res) => {
   const { username } = req.params;
   const tab = req.query.tab || 'tweets';
+  const currentUserId = getOptionalCurrentUserId(req) ?? -1;
 
   try {
     const [users] = await pool.query(
@@ -325,20 +344,35 @@ router.get('/:username', async (req, res) => {
 
     if (tab === 'tweets') {
       const [tweets] = await pool.query(
-        'SELECT id, user_id, content, parent_tweet_id, created_at FROM tweets WHERE user_id = ? ORDER BY created_at DESC',
-        [user.id]
+        `SELECT t.id, t.user_id, t.content, t.parent_tweet_id, t.created_at,
+                u.username, u.profile_pic_url,
+                (SELECT COUNT(*) FROM likes l WHERE l.tweet_id = t.id) AS like_count,
+                (SELECT COUNT(*) FROM retweets r WHERE r.tweet_id = t.id) AS retweet_count,
+                EXISTS(SELECT 1 FROM likes l2 WHERE l2.tweet_id = t.id AND l2.user_id = ?) AS liked_by_me,
+                EXISTS(SELECT 1 FROM retweets r2 WHERE r2.tweet_id = t.id AND r2.user_id = ?) AS retweeted_by_me
+         FROM tweets t
+         INNER JOIN users u ON u.id = t.user_id
+         WHERE t.user_id = ?
+         ORDER BY t.created_at DESC`,
+        [currentUserId, currentUserId, user.id]
       );
       return res.json({ ...user, tweets });
     }
 
     if (tab === 'likes') {
       const [likes] = await pool.query(
-        `SELECT t.id, t.user_id, t.content, t.parent_tweet_id, t.created_at 
+        `SELECT t.id, t.user_id, t.content, t.parent_tweet_id, t.created_at,
+                u.username, u.profile_pic_url,
+                (SELECT COUNT(*) FROM likes l3 WHERE l3.tweet_id = t.id) AS like_count,
+                (SELECT COUNT(*) FROM retweets r WHERE r.tweet_id = t.id) AS retweet_count,
+                EXISTS(SELECT 1 FROM likes l2 WHERE l2.tweet_id = t.id AND l2.user_id = ?) AS liked_by_me,
+                EXISTS(SELECT 1 FROM retweets r2 WHERE r2.tweet_id = t.id AND r2.user_id = ?) AS retweeted_by_me
          FROM tweets t 
+         INNER JOIN users u ON u.id = t.user_id
          INNER JOIN likes l ON t.id = l.tweet_id 
          WHERE l.user_id = ? 
          ORDER BY l.created_at DESC`,
-        [user.id]
+        [currentUserId, currentUserId, user.id]
       );
       return res.json({ ...user, likes });
     }

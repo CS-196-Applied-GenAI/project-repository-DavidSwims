@@ -245,27 +245,49 @@ const mockPoolQuery = jest.fn(async (sql, params = []) => {
     return [{}];
   }
 
-  if (sql.includes('SELECT id, user_id, content, parent_tweet_id, created_at FROM tweets WHERE user_id = ? ORDER BY created_at DESC')) {
-    const userId = Number(params[0]);
+  if (sql.includes('FROM tweets t') && sql.includes('WHERE t.user_id = ?') && sql.includes('ORDER BY t.created_at DESC')) {
+    const currentUserId = Number(params[0]);
+    const userId = Number(params[2]);
     const rows = state.tweets
       .filter((t) => t.user_id === userId)
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    return [rows];
+    return [rows.map((t) => {
+      const author = state.users.find((u) => u.id === t.user_id);
+      return {
+        ...t,
+        username: author?.username || 'unknown',
+        profile_pic_url: author?.profile_pic_url || '',
+        like_count: state.likes.filter((l) => l.tweet_id === t.id).length,
+        retweet_count: state.retweets.filter((r) => r.tweet_id === t.id).length,
+        liked_by_me: state.likes.some((l) => l.tweet_id === t.id && l.user_id === currentUserId),
+        retweeted_by_me: state.retweets.some((r) => r.tweet_id === t.id && r.user_id === currentUserId),
+      };
+    })];
   }
 
   if (sql.includes('FROM tweets t') && sql.includes('INNER JOIN likes l ON t.id = l.tweet_id')) {
-    const userId = Number(params[0]);
+    const currentUserId = Number(params[0]);
+    const userId = Number(params[2]);
     const rows = state.likes
       .filter((l) => l.user_id === userId)
       .map((l) => state.tweets.find((t) => t.id === l.tweet_id))
       .filter(Boolean)
-      .map((t) => ({
-        id: t.id,
-        user_id: t.user_id,
-        content: t.content,
-        parent_tweet_id: t.parent_tweet_id,
-        created_at: t.created_at,
-      }));
+      .map((t) => {
+        const author = state.users.find((u) => u.id === t.user_id);
+        return {
+          id: t.id,
+          user_id: t.user_id,
+          content: t.content,
+          parent_tweet_id: t.parent_tweet_id,
+          created_at: t.created_at,
+          username: author?.username || 'unknown',
+          profile_pic_url: author?.profile_pic_url || '',
+          like_count: state.likes.filter((l) => l.tweet_id === t.id).length,
+          retweet_count: state.retweets.filter((r) => r.tweet_id === t.id).length,
+          liked_by_me: state.likes.some((l) => l.tweet_id === t.id && l.user_id === currentUserId),
+          retweeted_by_me: state.retweets.some((r) => r.tweet_id === t.id && r.user_id === currentUserId),
+        };
+      });
     return [rows];
   }
 
